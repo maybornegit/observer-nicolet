@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Apr  1 16:19:13 2024
+Created on Thu Nov  7 16:24:34 2024
 
 @author: morganmayborne
 """
@@ -18,7 +18,6 @@ from scipy.fft import fft, fftfreq
 from nicolet_model_base import * 
 
 plt.style.use('https://github.com/dhaitz/matplotlib-stylesheets/raw/master/pacoty.mplstyle')
-plt.rcParams.update({'font.size': 16})
 
 ####### Parameters for the Nicolet Model ##########
 
@@ -35,7 +34,7 @@ K = 0.4e-6             #9 - maintenance respiration coefficient
 c = 0.0693             #10 - temp effect paramter
 t_baseline = 20        #11 - reference temp.
 theta = 0.3            #12 - growth respiration loss factor
-v = 22.1            #13 - growth rate coefficient without inhibition from closed canopy
+v = 22.1*.5            #13 - growth rate coefficient without inhibition from closed canopy
 b_g = 0.2              #14 - threshold paramter of growth inhibition function
 s_g = 10               #15 - slope parameter of growth inhibition function
 eta_OMC = 0.03         #16 - organic matter in kg per mol C
@@ -47,21 +46,19 @@ eta_NO3N = 0.062       #19 - kg nitrate per mol N
 p = np.array([eps, sigma, co2_baseline, a, b_p, pi_v, lambda_, gamma, s_p, K, c, t_baseline, theta, v, b_g, s_g, eta_OMC, eta_MMN, beta, eta_NO3N])
 
 ## Timespan Set-up ##
-day_max = 31 # Length of Model Projection (in days)
+day_max = 30 # Length of Model Projection (in days)
 t_span = (0, 86400*day_max)  # Time span
 dt = 3600  # Time steps for model (in seconds)
 t_array = np.arange(t_span[0], t_span[1], dt)
 
 ## Initial Conditions for State / Input ##
 x0 = np.array([0.007, 0.0671])  # Initial condition (M_cv, M_cs)
-u = np.array([200,23.0,500])  # Input (I [W/m2],T[C],C_co2[ppm])
+u = np.array([175,28.0,450])  # Input (I [W/m2],T[C],C_co2[ppm])
 u *= np.array([2.1e-5,1,.0195/450]) # Conversion to Model Units
 
 # ## Initialize Test Input Array ##
-u = u*np.ones((t_span[1]//dt,3)) # Expanding Input to Fill Full Trajectory
-u[:,0] *= np.array([(1 if i*3600 % 86400 > 36000 else 0.05) for i in range(t_span[1]//dt)]) # Input PAR - Step Function
-# u[:,1] *= 22.0
-# u[:,2] *= 0.0195*500/450
+# u = u*np.ones((t_span[1]//dt,3)) # Expanding Input to Fill Full Trajectory
+# u[:,0] *= np.array([(1 if i*3600 % 86400 < 36000 else 0.05) for i in range(t_span[1]//dt)]) # Input PAR - Step Function
 # u[:,1] += 2.0*np.cos(2*np.pi*(t_array-3600)/86400)  # Input Temp. - Sinusodial Daily Changes
 # u[:,2] += np.random.normal(0,1.5,t_span[1]//dt)*.22*u[:,2]  # Input Co2 - Gaussian Changes
 
@@ -69,8 +66,6 @@ u[:,0] *= np.array([(1 if i*3600 % 86400 > 36000 else 0.05) for i in range(t_spa
 run_model(f, h, x0, u, p, t_span, dt, 'Base Case', file_id='k_IC_test')
 t_traj, x_traj, y_traj = solve_system(f, h, x0, u, p, t_span, dt) # Basic run for model, no graphs
 y_traj_true = y_traj.copy()
-np.save('./dry_mass.npy', y_traj)
-np.save('./dry_mass_time.npy', t_traj)
 
 ####### Initialize Observer System ##########
 
@@ -145,13 +140,14 @@ C = np.array([[eta_MMN-(eta_OMC*gamma/beta), eta_MMN+(eta_OMC*lambda_*pi_v/beta)
 
 ### Initialize Core Hyper-parameters
 step_diff = 0.99               # Difference between actual parameter and initial guess
-scale = 9e-6                 # Real, Negative Part of Poles for Observer Placement
-scale_im = -(1/(1*dt))*1j         # Imaginary Part of Poles for Observer Placement
+scale = 9e-6                   # Real, Negative Part of Poles for Observer Placement
+scale_im = 2.777777e-4j         # Imaginary Part of Poles for Observer Placement
 true_value = p[9]               # Actual Value for the Parameter being Observed
 skip_num = 1                    # Number of Iterations between State Estimation Updates
 obs_skip_num = 1               # Number of Iterations between Observer Matrix Updates
 dt = t_traj[skip_num]-t_traj[0] # Functional dt based on skip_num
 stable = True
+
 
 ### Initialize Core Matrices
 x_init = np.array([x_traj[:,0][0], x_traj[:,0][1], true_value*step_diff,1]) # State Estimation Matrix
@@ -163,13 +159,11 @@ guesses[:,0] = x_init.copy()  # initialize
 parameter_guess = np.zeros((1,x_traj.shape[1]//skip_num))  # For Special predictions for important parameter
 parameter_guess[0,0] = x_init[2] # initialize
 stable_poles = np.zeros((1,x_traj.shape[1]//skip_num))
-y_guesses = [np.array([y_traj[:,0][0], y_traj[:,0][1]])]
-y_true = [np.array([y_traj[:,0][0], y_traj[:,0][1]])]
 
 
 ####### Core Observer Prediction Loop ##########
 
-for i in tqdm(range(1,x_traj.shape[1])):
+for i in range(1,x_traj.shape[1]):
     if i // skip_num == x_traj.shape[1] // skip_num:
         ## for making the matrices work for plotting
         break
@@ -188,7 +182,6 @@ for i in tqdm(range(1,x_traj.shape[1])):
         
         # Initialize Actual Output from Model at this Time Step
         y = np.array([y_traj[:,i][0], y_traj[:,i][1]])
-        y[0] = y[1]/10
         
         # Guess Next State based on Prev. State + its Derivative
         p[9] = x_init[2] # Change Paramter Matrix with Current Guess
@@ -196,14 +189,12 @@ for i in tqdm(range(1,x_traj.shape[1])):
         x_guess_0 = runge_kutta_4(f, x_init[0:2], u, p, dt,i)  # Get Next State from RK-4 Estimation
         x_guess_0 = np.array([x_guess_0[0], x_guess_0[1], x_init[2], 1]) # Re-initialize quantities for 3rd+4th terms
         y_guess = h(x_guess_0[0:2], p)[0:2] # Use h() to find output prediction
-        y_guesses.append(y_guess)
-        y_true.append(y)
         
         # Observer Term Estimation
         error = (y-y_guess) # Error between Actual + Estimated Output
         observer_term = K_o@error  # Observer Prediction Term
         x_guess_1_dot = observer_term
-        x_guess_1 = .001*dt*x_guess_1_dot + x_init  # Basic State Estimation from Derivative
+        x_guess_1 = dt*x_guess_1_dot + x_init  # Basic State Estimation from Derivative
         x_guess_1 /= x_guess_1[-1]  # Normalize based on Final Term
         x_guess_1[:2] = x_guess_0[:2] # Re-initialize quantities for 1st+2nd terms
         # x_guess_1[2] = sorted([0.2e-6, x_guess_1[2], 0.6e-6])[1]  # Optional Bounding in Rational Numbers
@@ -213,7 +204,6 @@ for i in tqdm(range(1,x_traj.shape[1])):
         # print('k:',i//skip_num,x_guess_1[2],'dx:', np.linalg.norm(dx), 'y_real:', y[1], 'y_guess:', -error[1]+y[1]) # Terminal Logging for Prediction, Error and Outputs
         if np.abs(x_guess_1[2]- x_init[2]) >= 1e-7:
             ## Stop estimation from making unstable changes
-            # print(np.abs(x_guess_1[2]- x_init[2]))
             x_guess_1[2] = x_init[2]
         x_init = x_guess_1.copy() # Re-initialize x_init for next estimation
         
@@ -221,16 +211,13 @@ for i in tqdm(range(1,x_traj.shape[1])):
         guesses[:,i//skip_num] = x_guess_1.copy()
         t_shaved[0,i//skip_num] = t_traj[i]
         parameter_guess[:,i//skip_num] = np.mean(guesses[2,:(i//skip_num)+1]) # Taking a Rolling Average for Better Estimation
-        # if np.mean(guesses[2,:(i//skip_num)+1])> 3.75e-7*.999:
-        #     print(np.mean(guesses[2,:(i//skip_num)+1]),t_traj[i]/60/60/24)
-        #     break
         
         if eigs[0] <= -3e-5:
             stable = False
         else:
             stable = True
         stable_poles[:,i//skip_num] = stable
-        
+ 
 stable_i = -1
 for i in range(stable_poles.shape[1]-7):
     if not np.any(stable_poles[0,i:i+7]):
@@ -242,39 +229,25 @@ for i in range(stable_poles.shape[1]-7):
 ## Logging Final Guess to Real Value Percentage Error
 print(100*np.abs(1-np.mean(guesses[2,:])/true_value))
 print(100*np.abs(1-np.mean(guesses[2,:stable_i])/true_value), stable_i)
-y_guess = np.array(y_guesses)
-y_true = np.array(y_true)
-
-# ## Plotting Parameter Prediction over Time
-# plt.plot(t_shaved[0,:stable_i].T/60/60/24, guesses[2,:stable_i], label='Response')
-# plt.plot(t_shaved[0,:stable_i].T/60/60/24, parameter_guess[0,:stable_i], label='Rolling Mean Guess')
-# # plt.plot(t_shaved.T/60/60/24, true_value*np.ones((guesses.shape[1],1)), label='True Parameter Value')
-# plt.title('Parameter Observer Convergence, Noise')
-# plt.legend(loc='upper left')
-# plt.xlabel('Time (days)')
-# plt.ylabel('K Value')
-# plt.grid(True)
-# plt.show()
 
 ## Plotting Parameter Prediction over Time
-plt.figure(1)
+plt.plot(t_shaved[0,:stable_i].T/60/60/24, guesses[2,:stable_i], label='Response')
+plt.plot(t_shaved[0,:stable_i].T/60/60/24, parameter_guess[0,:stable_i], label='Rolling Mean Guess')
+# plt.plot(t_shaved.T/60/60/24, true_value*np.ones((guesses.shape[1],1)), label='True Parameter Value')
+plt.title('Parameter Observer Convergence, Noise')
+plt.legend(loc='upper left')
+plt.xlabel('Time (days)')
+plt.ylabel('K Value')
+plt.grid(True)
+plt.show()
+
+## Plotting Parameter Prediction over Time
 plt.plot(t_shaved.T/60/60/24, guesses[2,:], label='Response')
 plt.plot(t_shaved.T/60/60/24, parameter_guess[0,:], label='Rolling Mean Guess')
 plt.plot(t_shaved.T/60/60/24, true_value*np.ones((guesses.shape[1],1)), label='True Parameter Value')
-plt.title('Parameter Observer Convergence')
-plt.legend(loc='lower right')
+plt.title('Parameter Observer Convergence, Noise')
+plt.legend(loc='upper left')
 plt.xlabel('Time (days)')
-plt.ylabel('Plant Respiration Parameter (1/s)')
+plt.ylabel('K Value')
 plt.grid(True)
-plt.savefig('filename.png', dpi=1200, bbox_inches = "tight")
 plt.show()
-
-## Plotting Biomass Predictions over Time
-# plt.plot(t_shaved.T/60/60/24, y_true[:,1], label='Predicted Growth')
-# plt.plot(t_shaved.T/60/60/24, y_guess[:,1], label='Predicted Growth')
-# plt.title('Parameter Observer Convergence, Noise')
-# plt.legend(loc='lower right')
-# plt.xlabel('Time (days)')
-# plt.ylabel('K Value')
-# plt.grid(True)
-# plt.show()

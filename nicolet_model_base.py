@@ -653,7 +653,7 @@ if __name__ == "__main__":
     c = 0.0693             #10 - temp effect paramter
     t_baseline = 20        #11 - reference temp.
     theta = 0.3            #12 - growth respiration loss factor
-    v = 22.1*.5            #13 - growth rate coefficient without inhibition from closed canopy
+    v = 22.1            #13 - growth rate coefficient without inhibition from closed canopy
     b_g = 0.2              #14 - threshold paramter of growth inhibition function
     s_g = 10               #15 - slope parameter of growth inhibition function
     eta_OMC = 0.03         #16 - organic matter in kg per mol C
@@ -665,19 +665,19 @@ if __name__ == "__main__":
     p = np.array([eps, sigma, co2_baseline, a, b_p, pi_v, lambda_, gamma, s_p, K, c, t_baseline, theta, v, b_g, s_g, eta_OMC, eta_MMN, beta, eta_NO3N])
     
     ## Timespan Set-up ##
-    day_max = 200 # Length of Model Projection (in days)
+    day_max = 31 # Length of Model Projection (in days)
     t_span = (0, 86400*day_max)  # Time span
     dt = 3600  # Time steps for model (in seconds)
     t_array = np.arange(t_span[0], t_span[1], dt)
     
     ## Initial Conditions for State / Input ##
     x0 = np.array([0.007, 0.0671])  # Initial condition (M_cv, M_cs)
-    u = np.array([175,28.0,450])  # Input (I [W/m2],T[C],C_co2[ppm])
+    u = np.array([200,23.0,550])  # Input (I [W/m2],T[C],C_co2[ppm])
     u *= np.array([2.1e-5,1,.0195/450]) # Conversion to Model Units
     
     ## Initialize Test Input Array ##
     u = u*np.ones((t_span[1]//dt,3)) # Expanding Input to Fill Full Trajectory
-    u[:,0] *= np.array([(1 if i*3600 % 86400 < 36000 else 0) for i in range(t_span[1]//dt)]) # Input PAR - Step Function
+    u[:,0] *= np.array([(1 if i*3600 % 86400 > 36000 else 0.05) for i in range(t_span[1]//dt)]) # Input PAR - Step Function
     u[:,1] += 2.0*np.cos(2*np.pi*(t_array-3600)/86400)  # Input Temp. - Sinusodial Daily Changes
     u[:,2] += np.random.normal(0,1.5,t_span[1]//dt)*.22*u[:,2]  # Input Co2 - Gaussian Changes
     
