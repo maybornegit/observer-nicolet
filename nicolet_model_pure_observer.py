@@ -17,8 +17,8 @@ from scipy.fft import fft, fftfreq
 
 from nicolet_model_base import * 
 
-plt.style.use('https://github.com/dhaitz/matplotlib-stylesheets/raw/master/pacoty.mplstyle')
-plt.rcParams.update({'font.size': 16})
+# plt.style.use('https://github.com/dhaitz/matplotlib-stylesheets/raw/master/pacoty.mplstyle')
+# plt.rcParams.update({'font.size': 16})
 
 ####### Parameters for the Nicolet Model ##########
 
@@ -188,7 +188,7 @@ for i in tqdm(range(1,x_traj.shape[1])):
         
         # Initialize Actual Output from Model at this Time Step
         y = np.array([y_traj[:,i][0], y_traj[:,i][1]])
-        y[0] = y[1]/10
+        y[0] = y[1]/20
         
         # Guess Next State based on Prev. State + its Derivative
         p[9] = x_init[2] # Change Paramter Matrix with Current Guess

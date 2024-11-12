@@ -24,6 +24,7 @@ with open(file_name, 'r') as file:
 new_trajs = []
 factors = [2.0,2.5,3.0,3.5,4.0,4.5,5.0,5.5]
 cutoffs = [2,5,8,11,16,22,26,30]
+factor = 0
 for i in range(len(traj_list)):
     cur_traj = np.array(traj_list[i],dtype=np.float64)
     for j in range(cur_traj.shape[1]):
@@ -38,7 +39,13 @@ for i in range(len(traj_list)):
     new_trajs.append(cur_traj)
 
 plt.figure(0)
-for i in range(len(new_trajs)):
-    plt.plot(new_trajs[i][0],new_trajs[i][1])
+# for i in range(len(traj_list)):
+i = 10
+plt.plot(np.array(new_trajs[i][0],dtype=np.float64),np.array(new_trajs[i][1],dtype=np.float64),label='M_fm')
+plt.title("Example Trajectory")
+plt.xlabel("Time (Days)")
+plt.ylabel("Fresh Biomass (kg m-2)")
+plt.legend()
+plt.grid(True)
 plt.show()
         

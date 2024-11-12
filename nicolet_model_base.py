@@ -130,7 +130,7 @@ def run_model(f, h, x0, u, p, t_span, dt, title, file_id='Regular_Test'):
     plt.xlabel('Time (days)')
     plt.ylabel('Weight (kg m-2)')
     plt.legend()
-    plt.grid(True)
+    # plt.grid(True)
     plt.show()
     return None
 
@@ -672,14 +672,14 @@ if __name__ == "__main__":
     
     ## Initial Conditions for State / Input ##
     x0 = np.array([0.007, 0.0671])  # Initial condition (M_cv, M_cs)
-    u = np.array([200,23.0,550])  # Input (I [W/m2],T[C],C_co2[ppm])
+    u = np.array([275,23.0,550])  # Input (I [W/m2],T[C],C_co2[ppm])
     u *= np.array([2.1e-5,1,.0195/450]) # Conversion to Model Units
     
     ## Initialize Test Input Array ##
     u = u*np.ones((t_span[1]//dt,3)) # Expanding Input to Fill Full Trajectory
     u[:,0] *= np.array([(1 if i*3600 % 86400 > 36000 else 0.05) for i in range(t_span[1]//dt)]) # Input PAR - Step Function
-    u[:,1] += 2.0*np.cos(2*np.pi*(t_array-3600)/86400)  # Input Temp. - Sinusodial Daily Changes
-    u[:,2] += np.random.normal(0,1.5,t_span[1]//dt)*.22*u[:,2]  # Input Co2 - Gaussian Changes
+    # u[:,1] += 2.0*np.cos(2*np.pi*(t_array-3600)/86400)  # Input Temp. - Sinusodial Daily Changes
+    # u[:,2] += np.random.normal(0,1.5,t_span[1]//dt)*.22*u[:,2]  # Input Co2 - Gaussian Changes
     
     ### Run the NICOLET Model (Un-comment run_model for graphical representations)
     run_model(f, h, x0, u, p, t_span, dt, 'Base Case', file_id='k_IC_test')
