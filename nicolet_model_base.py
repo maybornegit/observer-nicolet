@@ -125,6 +125,7 @@ def run_model(f, h, x0, u, p, t_span, dt, title, file_id='Regular_Test'):
     
     ## Plotting either state or output variables
     #plt.plot(t, x_traj[:,:].T, label=['M_cv', 'M_cs'])
+    plt.figure(0)
     plt.plot(t/60/60/24, y_traj[:2,:].T,label=['M_dm', 'M_fm'])
     plt.title(title)
     plt.xlabel('Time (days)')
@@ -637,6 +638,91 @@ def run_model(f, h, x0, u, p, t_span, dt, title, file_id='Regular_Test'):
     plt.show()
     return None
 
+def basic_test_w_lighting(lighting, k_, v_, a_, dt):
+    eps = 0.055            #0 - apparent light use efficiency
+    sigma = 1.4e-3         #1 - co2 transport coefficient
+    co2_baseline = 0.0011  #2 - co2 compensation point
+    a = a_                 #3 - leaf area closure paramete
+    b_p = 0.8              #4 - threshold paramter of photosynthesis inhibition function
+    pi_v = 580             #5 - osmotic pressure in the vacuoles
+    lambda_ = 1/1200       #6 - carbon concentration calculation parameter
+    gamma = 0.61           #7 - coefficient of osmotic carbon equivalence
+    s_p = 10               #8 - slope parameter of photosynthesis inhibition function
+    K = k_                 #9 - maintenance respiration coefficient
+    c = 0.0693             #10 - temp effect paramter
+    t_baseline = 20        #11 - reference temp.
+    theta = 0.3            #12 - growth respiration loss factor
+    v = v_                 #13 - growth rate coefficient without inhibition from closed canopy
+    b_g = 0.2              #14 - threshold paramter of growth inhibition function
+    s_g = 10               #15 - slope parameter of growth inhibition function
+    eta_OMC = 0.03         #16 - organic matter in kg per mol C
+    eta_MMN = 0.148        #17 - minerals in kg per mol N in vacuoles
+    beta = 6.0             #18 - regression paramter of C/N ratio in vacuoles
+    eta_NO3N = 0.062       #19 - kg nitrate per mol N
+    
+    ## Parameter Array (see above for indices) ##
+    p = np.array([eps, sigma, co2_baseline, a, b_p, pi_v, lambda_, gamma, s_p, K, c, t_baseline, theta, v, b_g, s_g, eta_OMC, eta_MMN, beta, eta_NO3N])
+    
+    ## Timespan Set-up ##
+    day_max = 31 # Length of Model Projection (in days)
+    t_span = (0, 86400*day_max)  # Time span
+    dt = 3600*dt  # Time steps for model (in seconds)
+    t_array = np.arange(t_span[0], t_span[1], dt)
+    
+    ## Initial Conditions for State / Input ##
+    x0 = np.array([0.007, 0.0671])  # Initial condition (M_cv, M_cs)
+    u = np.array([lighting,23.0,550])  # Input (I [W/m2],T[C],C_co2[ppm])
+    u *= np.array([2.1739130434e-6,1,.0195/450]) # Conversion to Model Units
+    
+    ## Initialize Test Input Array ##
+    u = u*np.ones((t_span[1]//dt,3)) # Expanding Input to Fill Full Trajectory
+    u[:,0] *= np.array([(1 if i*3600*4 % 86400 > 36000 else 0.05) for i in range(t_span[1]//dt)]) # Input PAR - Step Function
+    # u[:,1] += 2.0*np.cos(2*np.pi*(t_array-3600)/86400)  # Input Temp. - Sinusodial Daily Changes
+    # u[:,2] += np.random.normal(0,1.5,t_span[1]//dt)*.22*u[:,2]  # Input Co2 - Gaussian Changes
+    
+    ### Run the NICOLET Model (Un-comment run_model for graphical representations)
+    t_traj, x_traj, y_traj = solve_system(f, h, x0, u, p, t_span, dt) # Basic run for model, no graphs
+    return t_traj, x_traj, y_traj
+
+def residual_function_va(x, arg):
+    true_biomass = arg[0]
+    lighting = arg[1]
+    dt = arg[2]
+    k = arg[3]
+    t_traj, _, y_traj = basic_test_w_lighting(lighting, k, x[0], x[1], dt)
+
+    corr = []
+    for k,t in enumerate(t_traj):
+        if t/60/60/24 in true_biomass[0]:
+            corr.append(k)
+
+    resid = 0
+    for k in range(len(true_biomass[0])):
+        resid += (true_biomass[1][k] - y_traj[1,corr[k]])**2
+    # print("Residual: ",resid)
+    return resid
+
+def residual_function_k(x, arg):
+    true_biomass = arg[0]
+    lighting = arg[1]
+    dt = arg[2]
+    v = arg[3]
+    a = arg[4]
+    i_s = arg[5]
+
+    resid = 0
+    for j, i in enumerate(i_s):
+        t_traj, _, y_traj = basic_test_w_lighting(lighting[j], x[0], v, a, dt)
+
+        corr = []
+        for k,t in enumerate(t_traj):
+            if t/60/60/24 in true_biomass[i][0]:
+                corr.append(k)
+
+        for k in range(len(true_biomass[i][0])):
+            resid += (true_biomass[i][1][k] - y_traj[1,corr[k]])**2
+    return resid
+
 if __name__ == "__main__":
     ####### Parameters for the Nicolet Model ##########
     
@@ -673,11 +759,11 @@ if __name__ == "__main__":
     ## Initial Conditions for State / Input ##
     x0 = np.array([0.007, 0.0671])  # Initial condition (M_cv, M_cs)
     u = np.array([275,23.0,550])  # Input (I [W/m2],T[C],C_co2[ppm])
-    u *= np.array([2.1e-5,1,.0195/450]) # Conversion to Model Units
+    u *= np.array([2.1e-4,1,.0195/450]) # Conversion to Model Units
     
     ## Initialize Test Input Array ##
     u = u*np.ones((t_span[1]//dt,3)) # Expanding Input to Fill Full Trajectory
-    u[:,0] *= np.array([(1 if i*3600 % 86400 > 36000 else 0.05) for i in range(t_span[1]//dt)]) # Input PAR - Step Function
+    u[:,0] *= np.array([(1 if i*3600 % 86400 > 36000 else 0.01) for i in range(t_span[1]//dt)]) # Input PAR - Step Function
     # u[:,1] += 2.0*np.cos(2*np.pi*(t_array-3600)/86400)  # Input Temp. - Sinusodial Daily Changes
     # u[:,2] += np.random.normal(0,1.5,t_span[1]//dt)*.22*u[:,2]  # Input Co2 - Gaussian Changes
     
