@@ -74,8 +74,8 @@ def solve_system(f, h, x0, u, p, t_span, dt):
     x_traj = np.zeros((len(x0), num_steps))
     y_traj = np.zeros((len(h(x0, p)), num_steps))
     x_traj[:, 0] = x0
+    y_traj[:, 0] = h(x0, p)
     
-
     for i in range(1, num_steps):
         if u.shape[0] == 3:
             x_traj[:, i] = runge_kutta_4(f, x_traj[:, i-1], u, p, dt, 0)
@@ -661,7 +661,7 @@ def basic_test_w_lighting(lighting, k_, v_, a_, dt):
     eta_NO3N = 0.062       #19 - kg nitrate per mol N
     
     ## Parameter Array (see above for indices) ##
-    p = np.array([eps, sigma, co2_baseline, a, b_p, pi_v, lambda_, gamma, s_p, K, c, t_baseline, theta, v, b_g, s_g, eta_OMC, eta_MMN, beta, eta_NO3N])
+    p = np.array([eps, sigma, co2_baseline, a, b_p, pi_v, lambda_, gamma, s_p, K, c, t_baseline, theta, v, b_g, s_g, eta_OMC, eta_MMN, beta, eta_NO3N], dtype=np.float64)
     
     ## Timespan Set-up ##
     day_max = 31 # Length of Model Projection (in days)
@@ -684,44 +684,170 @@ def basic_test_w_lighting(lighting, k_, v_, a_, dt):
     t_traj, x_traj, y_traj = solve_system(f, h, x0, u, p, t_span, dt) # Basic run for model, no graphs
     return t_traj, x_traj, y_traj
 
+def huber_loss(residual, delta):
+    """Compute Huber loss for a given residual."""
+    if abs(residual) <= delta:
+        return 0.5 * residual**2
+    else:
+        return delta * (abs(residual) - 0.5 * delta)
+    
+def residual_function_one_param(x, arg):
+    true_biomass = arg[0]
+    lighting = arg[1]
+    dt = arg[2]
+    delta = arg[3]
+    huber = arg[4]
+    if arg[5] == 'K':
+        k_ = x[0]
+        v = arg[6]
+        a = arg[7]
+    elif arg[5] == 'V':
+        k_ = arg[6]
+        v = x[0]
+        a = arg[7]
+    elif arg[5] == 'A':
+        k_ = arg[6]
+        v = arg[7]
+        a = x[0]
+
+    resid = []
+    for i in range(len(true_biomass)):
+        t_traj, _, y_traj = basic_test_w_lighting(lighting[i], k_, v, a, dt)
+
+        corr = []
+        for k,t in enumerate(t_traj):
+            if t/60/60/24 in true_biomass[i][0][:]:
+                corr.append(k)
+
+        for k in range(len(true_biomass[i][0][:])):
+            if not huber:
+                resid.append((true_biomass[i][1][k] - y_traj[1,corr[k]])**2)
+            else:
+                residual = true_biomass[i][1][k] - y_traj[1, corr[k]]
+                loss = huber_loss(residual, delta)
+                resid.append(loss)
+    # print("v a residual:",x[0],x[1],resid)
+    # print(len(resid))
+    return np.array(resid).mean()
+
+def residual_function_two_params(x, arg):
+    true_biomass = arg[0]
+    lighting = arg[1]
+    dt = arg[2]
+    delta = arg[3]
+    huber = arg[4]
+    if arg[5] == 'VA':
+        k_ = arg[6]
+        v = x[0]
+        a = x[1]
+    elif arg[5] == 'KA':
+        k_ = x[0]
+        v = arg[6]
+        a = x[1]
+    elif arg[5] == 'KV':
+        k_ = x[0]
+        v = x[1]
+        a = arg[6]
+
+    resid = []
+    for i in range(len(true_biomass)):
+        t_traj, _, y_traj = basic_test_w_lighting(lighting[i], k_, v, a, dt)
+
+        corr = []
+        for k,t in enumerate(t_traj):
+            if t/60/60/24 in true_biomass[i][0][:]:
+                corr.append(k)
+
+        for k in range(len(true_biomass[i][0][:])):
+            if not huber:
+                resid.append((true_biomass[i][1][k] - y_traj[1,corr[k]])**2)
+            else:
+                residual = true_biomass[i][1][k] - y_traj[1, corr[k]]
+                loss = huber_loss(residual, delta)
+                resid.append(loss)
+    # print("Residual: ",resid)
+    # print("v a residual:",x[0],x[1],resid)
+    return np.array(resid).mean()
+    
 def residual_function_va(x, arg):
     true_biomass = arg[0]
     lighting = arg[1]
     dt = arg[2]
-    k = arg[3]
-    t_traj, _, y_traj = basic_test_w_lighting(lighting, k, x[0], x[1], dt)
+    delta = arg[3]
+    huber = arg[4]
+    k_ = arg[5]
 
-    corr = []
-    for k,t in enumerate(t_traj):
-        if t/60/60/24 in true_biomass[0]:
-            corr.append(k)
+    resid = []
+    for i in range(len(true_biomass)):
+        t_traj, _, y_traj = basic_test_w_lighting(lighting[i], k_, x[0], x[1], dt)
 
-    resid = 0
-    for k in range(len(true_biomass[0])):
-        resid += (true_biomass[1][k] - y_traj[1,corr[k]])**2
+        corr = []
+        for k,t in enumerate(t_traj):
+            if t/60/60/24 in true_biomass[i][0][:]:
+                corr.append(k)
+
+        for k in range(len(true_biomass[i][0][:])):
+            if not huber:
+                resid.append((true_biomass[i][1][k] - y_traj[1,corr[k]])**2)
+            else:
+                residual = true_biomass[i][1][k] - y_traj[1, corr[k]]
+                loss = huber_loss(residual, delta)
+                resid.append(loss)
     # print("Residual: ",resid)
-    return resid
+    # print("v a residual:",x[0],x[1],resid)
+    return np.array(resid).mean()
 
 def residual_function_k(x, arg):
     true_biomass = arg[0]
     lighting = arg[1]
     dt = arg[2]
-    v = arg[3]
-    a = arg[4]
-    i_s = arg[5]
+    delta = arg[3]
+    huber = arg[4]
+    v = arg[6]
+    a = arg[7]
 
-    resid = 0
-    for j, i in enumerate(i_s):
-        t_traj, _, y_traj = basic_test_w_lighting(lighting[j], x[0], v, a, dt)
+    resid = []
+    for i in range(len(true_biomass)):
+        t_traj, _, y_traj = basic_test_w_lighting(lighting[i], x[0], v, a, dt)
 
         corr = []
         for k,t in enumerate(t_traj):
-            if t/60/60/24 in true_biomass[i][0]:
+            if t/60/60/24 in true_biomass[i][0][:]:
                 corr.append(k)
 
-        for k in range(len(true_biomass[i][0])):
-            resid += (true_biomass[i][1][k] - y_traj[1,corr[k]])**2
-    return resid
+        for k in range(len(true_biomass[i][0][:])):
+            if not huber:
+                resid.append((true_biomass[i][1][k] - y_traj[1,corr[k]])**2)
+            else:
+                residual = true_biomass[i][1][k] - y_traj[1, corr[k]]
+                loss = huber_loss(residual, delta)
+                resid.append(loss)
+    return np.array(resid).mean()
+
+def residual_function_kva(x, arg):
+    true_biomass = arg[0]
+    lighting = arg[1]
+    dt = arg[2]
+    delta = arg[3]
+    huber = arg[4]
+
+    resid = []
+    for i in range(len(true_biomass)):
+        t_traj, _, y_traj = basic_test_w_lighting(lighting[i], x[0], x[1], x[2], dt)
+
+        corr = []
+        for k,t in enumerate(t_traj):
+            if t/60/60/24 in true_biomass[i][0][:]:
+                corr.append(k)
+
+        for k in range(len(true_biomass[i][0][:])):
+            if not huber:
+                resid.append((true_biomass[i][1][k] - y_traj[1,corr[k]])**2)
+            else:
+                residual = true_biomass[i][1][k] - y_traj[1, corr[k]]
+                loss = huber_loss(residual, delta)
+                resid.append(loss)
+    return np.array(resid).mean()
 
 if __name__ == "__main__":
     ####### Parameters for the Nicolet Model ##########
@@ -739,7 +865,7 @@ if __name__ == "__main__":
     c = 0.0693             #10 - temp effect paramter
     t_baseline = 20        #11 - reference temp.
     theta = 0.3            #12 - growth respiration loss factor
-    v = 22.1            #13 - growth rate coefficient without inhibition from closed canopy
+    v = 22.1               #13 - growth rate coefficient without inhibition from closed canopy
     b_g = 0.2              #14 - threshold paramter of growth inhibition function
     s_g = 10               #15 - slope parameter of growth inhibition function
     eta_OMC = 0.03         #16 - organic matter in kg per mol C
