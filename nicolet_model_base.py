@@ -728,7 +728,7 @@ def residual_function_one_param(x, arg):
                 resid.append(loss)
     # print("v a residual:",x[0],x[1],resid)
     # print(len(resid))
-    return np.array(resid).mean()
+    return np.array(resid).mean(), np.array(resid)
 
 def residual_function_two_params(x, arg):
     true_biomass = arg[0]
@@ -767,7 +767,7 @@ def residual_function_two_params(x, arg):
                 resid.append(loss)
     # print("Residual: ",resid)
     # print("v a residual:",x[0],x[1],resid)
-    return np.array(resid).mean()
+    return np.array(resid).mean(),np.array(resid)
     
 def residual_function_va(x, arg):
     true_biomass = arg[0]
@@ -811,9 +811,8 @@ def residual_function_k(x, arg):
         t_traj, _, y_traj = basic_test_w_lighting(lighting[i], x[0], v, a, dt)
 
         corr = []
-        for k,t in enumerate(t_traj):
-            if t/60/60/24 in true_biomass[i][0][:]:
-                corr.append(k)
+        if any(abs(t/60/60/24 - true_biomass[i][0][j]) < 1e-7 for j in range(len(true_biomass[i][0][:]))):
+            corr.append(k)
 
         for k in range(len(true_biomass[i][0][:])):
             if not huber:
@@ -847,7 +846,7 @@ def residual_function_kva(x, arg):
                 residual = true_biomass[i][1][k] - y_traj[1, corr[k]]
                 loss = huber_loss(residual, delta)
                 resid.append(loss)
-    return np.array(resid).mean()
+    return np.array(resid).mean(), np.array(resid)
 
 if __name__ == "__main__":
     ####### Parameters for the Nicolet Model ##########
