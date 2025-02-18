@@ -8,12 +8,12 @@ Created on Mon Jun 17 10:34:10 2024
 
 import numpy as np
 import matplotlib.pyplot as plt
-from tqdm import tqdm
-from datetime import datetime
-from scipy.signal import place_poles
-import scipy.signal as signal
-from scipy.ndimage import gaussian_filter1d
-from scipy.fft import fft, fftfreq
+# from tqdm import tqdm
+# from datetime import datetime
+# from scipy.signal import place_poles
+# import scipy.signal as signal
+# from scipy.ndimage import gaussian_filter1d
+# from scipy.fft import fft, fftfreq
 
 
 ####### Functions for the Nicolet Model ##########
@@ -363,236 +363,6 @@ def M_dm(x, p):
     M_dm = term_1+term_2_1+term_2_2
     return M_dm
 
-## Other Helper Function ##
-
-def p_(u,p):
-    '''
-    Uninhibited Photosynthesis Rate Function; for a specific time t
-    
-    Parameters:
-    u: Input Parameters [I, T, C_co2]
-    p: NICOLET Model Parameters
-            
-    Returns: 
-    p_ICca: Uninhibited Photosynthesis Rate; in mol[C]/m2/s
-
-    '''
-    eps = p[0]
-    sigma = p[1]
-    co2_baseline = p[2]
-    
-    I = u[0]
-    C_co2 = u[2]
-    
-    p_ICca = (eps*I*sigma*(C_co2-co2_baseline))/((eps*I)+(sigma*(C_co2-co2_baseline)))
-    return p_ICca
-
-def f_(x,p):
-    '''
-    Canopy Closure Reduction Function; for a specific time t
-    
-    Parameters:
-    u: Input Parameters [I, T, C_co2]
-    p: NICOLET Model Parameters
-            
-    Returns: 
-    f_Mcs: Canopy Closure Reduction Result; dimensionless
-
-    '''
-    a = p[3]
-    M_cs = x[1]
-    
-    f_Mcs = 1-np.exp(-a*M_cs)
-    return f_Mcs
-
-def e_(x,u,p):
-    '''
-    Specific Maintenance Respiration Function; for a specific time t
-    
-    Parameters:
-    x: State Variables [M_cv, M_cs]
-    u: Input Parameters [I, T, C_co2]
-    p: NICOLET Model Parameters
-            
-    Returns: 
-    e_: Specific Maintenance Respiration Metric; in 1/s
-
-    '''
-    c = p[10]
-    t_baseline = p[11]
-    k = x[2]
-    T = u[1]
-    
-    e_ = k*np.exp(c*(T-t_baseline))
-    return e_
-
-def g_(x,u,p):
-    '''
-    Maximum Growth Rate Function; for a specific time t
-    
-    Parameters:
-    x: State Variables [M_cv, M_cs]
-    u: Input Parameters [I, T, C_co2]
-    p: NICOLET Model Parameters
-            
-    Returns: 
-    g_: Maximum Growth Rate Metric; in mol[C]/m2/s
-
-    '''
-    c = p[10]
-    t_baseline = p[11]
-    v = p[13]
-    k = x[2]
-    T = u[1]
-    
-    g_ = v*k*np.exp(c*(T-t_baseline))
-    return g_
-
-def h_p(x,p):
-    '''
-    Photosynthesis Inhibition Functionn; for a specific time t
-    
-    Parameters:
-    x: State Variables [M_cv, M_cs]
-    p: NICOLET Model Parameters
-            
-    Returns: 
-    h_pCcv: Photosynthesis Inhibition Function; dimensionless
-
-    '''
-    b_p = p[4]
-    pi_v = p[5]
-    lambda_ = p[6]
-    gamma = p[7]
-    s_p = p[8]
-    
-    M_cv = x[0]
-    M_cs = x[1]
-    C_cv = M_cv/lambda_/M_cs
-    
-    h_pCcv = 1/(1+(((1-b_p)*pi_v)/(pi_v*(gamma*C_cv)))**(s_p))
-    return h_pCcv
-
-def h_g(x,p):
-    '''
-    Source Depletion Switching Functionn; for a specific time t
-    
-    Parameters:
-    x: State Variables [M_cv, M_cs]
-    p: NICOLET Model Parameters
-            
-    Returns: 
-    h_gCcv: Source Depletion Switching Function; dimensionless
-
-    '''
-    pi_v = p[5]
-    lambda_ = p[6]
-    gamma = p[7]
-    b_g = p[14]
-    s_g = p[15]
-    
-    M_cv = x[0]
-    M_cs = x[1]
-    
-    C_cv = M_cv/lambda_/M_cs
-    h_gCcv = 1/(1+((b_g*pi_v)/(gamma*C_cv))**s_g)
-    return h_gCcv
-
-## Linearization Helper Functions (See A matrix below) ##
-
-def dh_p_mcv(x,p):
-    '''
-    Partial Derivative of Photosynthesis Inhibition Function w.r.t non-structural carbon; for a specific time t
-    
-    Parameters:
-    x: State Variables [M_cv, M_cs]
-    p: NICOLET Model Parameters
-            
-    Returns: 
-    dh_p: P.D of h_p function w.r.t M_cv; dimensionless
-
-    '''
-    b_p = p[4] 
-    lambda_ = p[6] 
-    gamma = p[7] 
-    s_p = p[8] 
-    M_cv = x[0]
-    M_cs = x[1]
-    
-    dh_p = s_p*((M_cs*lambda_*(1-b_p))/(M_cv*gamma))**s_p*(h_p(x, p)**2)/M_cv
-    return dh_p
-
-def dh_g_mcv(x,p):
-    '''
-    Partial Derivative of Source Depletion Switching Function w.r.t non-structural carbon; for a specific time t
-    
-    Parameters:
-    x: State Variables [M_cv, M_cs]
-    p: NICOLET Model Parameters
-            
-    Returns: 
-    dh_g: P.D of h_g function w.r.t M_cv; dimensionless
-
-    '''
-    pi_v = p[5]
-    lambda_ = p[6]
-    gamma = p[7]
-    b_g = p[14]
-    s_g = p[15]
-    
-    M_cv = x[0]
-    M_cs = x[1]
-    
-    dh_g = s_g*((M_cs*lambda_*pi_v*b_g)/(M_cv*gamma))**s_g*(h_g(x, p)**2)/M_cv
-    return dh_g
-
-def dh_p_mcs(x,p):
-    '''
-    Partial Derivative of Photosynthesis Inhibition Function w.r.t structural carbon; for a specific time t
-    
-    Parameters:
-    x: State Variables [M_cv, M_cs]
-    p: NICOLET Model Parameters
-            
-    Returns: 
-    dh_p: P.D of h_p function w.r.t M_cs; dimensionless
-
-    '''
-    b_p = p[4] 
-    lambda_ = p[6] 
-    gamma = p[7] 
-    s_p = p[8] 
-    
-    M_cv = x[0]
-    M_cs = x[1]
-    
-    dh_p = -s_p*((M_cs*lambda_*(1-b_p))/(M_cv*gamma))**s_p*(h_p(x, p)**2)/M_cs
-    return dh_p
-
-def dh_g_mcs(x,p):
-    '''
-    Partial Derivative of Source Depletion Switching Function w.r.t structural carbon; for a specific time t
-    
-    Parameters:
-    x: State Variables [M_cv, M_cs]
-    p: NICOLET Model Parameters
-            
-    Returns: 
-    dh_g: P.D of h_g function w.r.t M_cs; dimensionless
-
-    '''
-    pi_v = p[5]
-    lambda_ = p[6]
-    gamma = p[7]
-    b_g = p[14]
-    s_g = p[15]
-    
-    M_cv = x[0]
-    M_cs = x[1]
-    
-    dh_g = -s_g*((M_cs*lambda_*pi_v*b_g)/(M_cv*gamma))**s_g*(h_g(x, p)**2)/M_cs
-    return dh_g
-
 # Solve the system
 def run_model(f, h, x0, u, p, t_span, dt, title, file_id='Regular_Test'):
     t, x_traj, y_traj = solve_system(f, h, x0, u, p, t_span, dt)
@@ -664,10 +434,9 @@ def basic_test_w_lighting(lighting, k_, v_, a_, dt):
     p = np.array([eps, sigma, co2_baseline, a, b_p, pi_v, lambda_, gamma, s_p, K, c, t_baseline, theta, v, b_g, s_g, eta_OMC, eta_MMN, beta, eta_NO3N], dtype=np.float64)
     
     ## Timespan Set-up ##
-    day_max = 31 # Length of Model Projection (in days)
+    day_max = 35 # Length of Model Projection (in days)
     t_span = (0, 86400*day_max)  # Time span
     dt = 3600*dt  # Time steps for model (in seconds)
-    t_array = np.arange(t_span[0], t_span[1], dt)
     
     ## Initial Conditions for State / Input ##
     x0 = np.array([0.007, 0.0671])  # Initial condition (M_cv, M_cs)
@@ -676,7 +445,7 @@ def basic_test_w_lighting(lighting, k_, v_, a_, dt):
     
     ## Initialize Test Input Array ##
     u = u*np.ones((t_span[1]//dt,3)) # Expanding Input to Fill Full Trajectory
-    u[:,0] *= np.array([(1 if i*3600*4 % 86400 > 36000 else 0.05) for i in range(t_span[1]//dt)]) # Input PAR - Step Function
+    u[:,0] *= np.array([(1 if i*dt % 86400 > 36000 else 0.01) for i in range(t_span[1]//dt)]) # Input PAR - Step Function
     # u[:,1] += 2.0*np.cos(2*np.pi*(t_array-3600)/86400)  # Input Temp. - Sinusodial Daily Changes
     # u[:,2] += np.random.normal(0,1.5,t_span[1]//dt)*.22*u[:,2]  # Input Co2 - Gaussian Changes
     
@@ -723,7 +492,7 @@ def residual_function_one_param(x, arg):
             if not huber:
                 resid.append((true_biomass[i][1][k] - y_traj[1,corr[k]])**2)
             else:
-                residual = true_biomass[i][1][k] - y_traj[1, corr[k]]
+                residual = (true_biomass[i][1][k] - y_traj[1,corr[k]])**2
                 loss = huber_loss(residual, delta)
                 resid.append(loss)
     # print("v a residual:",x[0],x[1],resid)
@@ -762,66 +531,12 @@ def residual_function_two_params(x, arg):
             if not huber:
                 resid.append((true_biomass[i][1][k] - y_traj[1,corr[k]])**2)
             else:
-                residual = true_biomass[i][1][k] - y_traj[1, corr[k]]
+                residual = (true_biomass[i][1][k] - y_traj[1,corr[k]])**2
                 loss = huber_loss(residual, delta)
                 resid.append(loss)
     # print("Residual: ",resid)
     # print("v a residual:",x[0],x[1],resid)
     return np.array(resid).mean(),np.array(resid)
-    
-def residual_function_va(x, arg):
-    true_biomass = arg[0]
-    lighting = arg[1]
-    dt = arg[2]
-    delta = arg[3]
-    huber = arg[4]
-    k_ = arg[5]
-
-    resid = []
-    for i in range(len(true_biomass)):
-        t_traj, _, y_traj = basic_test_w_lighting(lighting[i], k_, x[0], x[1], dt)
-
-        corr = []
-        for k,t in enumerate(t_traj):
-            if t/60/60/24 in true_biomass[i][0][:]:
-                corr.append(k)
-
-        for k in range(len(true_biomass[i][0][:])):
-            if not huber:
-                resid.append((true_biomass[i][1][k] - y_traj[1,corr[k]])**2)
-            else:
-                residual = true_biomass[i][1][k] - y_traj[1, corr[k]]
-                loss = huber_loss(residual, delta)
-                resid.append(loss)
-    # print("Residual: ",resid)
-    # print("v a residual:",x[0],x[1],resid)
-    return np.array(resid).mean()
-
-def residual_function_k(x, arg):
-    true_biomass = arg[0]
-    lighting = arg[1]
-    dt = arg[2]
-    delta = arg[3]
-    huber = arg[4]
-    v = arg[6]
-    a = arg[7]
-
-    resid = []
-    for i in range(len(true_biomass)):
-        t_traj, _, y_traj = basic_test_w_lighting(lighting[i], x[0], v, a, dt)
-
-        corr = []
-        if any(abs(t/60/60/24 - true_biomass[i][0][j]) < 1e-7 for j in range(len(true_biomass[i][0][:]))):
-            corr.append(k)
-
-        for k in range(len(true_biomass[i][0][:])):
-            if not huber:
-                resid.append((true_biomass[i][1][k] - y_traj[1,corr[k]])**2)
-            else:
-                residual = true_biomass[i][1][k] - y_traj[1, corr[k]]
-                loss = huber_loss(residual, delta)
-                resid.append(loss)
-    return np.array(resid).mean()
 
 def residual_function_kva(x, arg):
     true_biomass = arg[0]
@@ -843,7 +558,7 @@ def residual_function_kva(x, arg):
             if not huber:
                 resid.append((true_biomass[i][1][k] - y_traj[1,corr[k]])**2)
             else:
-                residual = true_biomass[i][1][k] - y_traj[1, corr[k]]
+                residual = (true_biomass[i][1][k] - y_traj[1,corr[k]])**2
                 loss = huber_loss(residual, delta)
                 resid.append(loss)
     return np.array(resid).mean(), np.array(resid)
@@ -876,7 +591,7 @@ if __name__ == "__main__":
     p = np.array([eps, sigma, co2_baseline, a, b_p, pi_v, lambda_, gamma, s_p, K, c, t_baseline, theta, v, b_g, s_g, eta_OMC, eta_MMN, beta, eta_NO3N])
     
     ## Timespan Set-up ##
-    day_max = 31 # Length of Model Projection (in days)
+    day_max = 40 # Length of Model Projection (in days)
     t_span = (0, 86400*day_max)  # Time span
     dt = 3600  # Time steps for model (in seconds)
     t_array = np.arange(t_span[0], t_span[1], dt)
@@ -884,17 +599,16 @@ if __name__ == "__main__":
     ## Initial Conditions for State / Input ##
     x0 = np.array([0.007, 0.0671])  # Initial condition (M_cv, M_cs)
     u = np.array([275,23.0,550])  # Input (I [W/m2],T[C],C_co2[ppm])
-    u *= np.array([2.1e-4,1,.0195/450]) # Conversion to Model Units
+    u *= np.array([2.1739130434e-6,1,.0195/450]) # Conversion to Model Units
     
     ## Initialize Test Input Array ##
     u = u*np.ones((t_span[1]//dt,3)) # Expanding Input to Fill Full Trajectory
-    u[:,0] *= np.array([(1 if i*3600 % 86400 > 36000 else 0.01) for i in range(t_span[1]//dt)]) # Input PAR - Step Function
+    u[:,0] *= np.array([(1 if i*dt % 86400 > 36000 else 0.05) for i in range(t_span[1]//dt)]) # Input PAR - Step Function
     # u[:,1] += 2.0*np.cos(2*np.pi*(t_array-3600)/86400)  # Input Temp. - Sinusodial Daily Changes
     # u[:,2] += np.random.normal(0,1.5,t_span[1]//dt)*.22*u[:,2]  # Input Co2 - Gaussian Changes
     
     ### Run the NICOLET Model (Un-comment run_model for graphical representations)
     run_model(f, h, x0, u, p, t_span, dt, 'Base Case', file_id='k_IC_test')
-    t_traj, x_traj, y_traj = solve_system(f, h, x0, u, p, t_span, dt) # Basic run for model, no graphs
 
 
 

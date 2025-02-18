@@ -53,16 +53,17 @@ def get_traj(file_sheet, mass_csv):
 
 def ground_truth_traj(seq,trueData):
     traj_array_g = [[], []]
+    start_day = 10
     for j in range(len(seq)):
         traj_array_g[1].append(
             float(trueData[trueData['Data ID'] == seq[j].replace('.npy', '')]['Fresh Biomass'].iloc[0]))
         if j == 0:
-            traj_array_g[0].append(10)
+            traj_array_g[0].append(start_day)
         else:
             diff = (datetime.strptime(seq[j][:10], "%Y-%m-%d") - datetime.strptime(seq[j - 1][:10],
                                                                                         "%Y-%m-%d")).days
             traj_array_g[0].append(traj_array_g[0][-1] + int(diff))
-        if (traj_array_g[0][-1] - 10) >= 14:
+        if (traj_array_g[0][-1] - start_day) >= 14:
             break
     return traj_array_g[0], traj_array_g[1]
 
