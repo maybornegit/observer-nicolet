@@ -1,7 +1,6 @@
 import pandas as pd
 import os
 import numpy as np
-import matplotlib.pyplot as plt
 from datetime import datetime
 
 def get_traj(file_sheet, mass_csv):
@@ -120,4 +119,4 @@ def traj_analysis():
 
 if __name__ == '__main__':
     light, trajs = traj_analysis()
-    print(len(trajs))
+    # print(len(trajs))

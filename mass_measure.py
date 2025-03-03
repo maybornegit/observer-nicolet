@@ -5,15 +5,15 @@ Created on Fri Nov  8 13:51:08 2024
 
 @author: morganmayborne
 """
-import random
+import random, csv
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 from nicolet_model_base import basic_test_w_lighting, residual_function_kva, residual_function_one_param, residual_function_two_params
 from generate_trajs import traj_analysis
 from scipy.optimize import minimize
-import seaborn as sns
 import pandas as pd
+import seaborn as sns
 
 plt.style.use('https://github.com/dhaitz/matplotlib-stylesheets/raw/master/pacoty.mplstyle')
 
@@ -106,7 +106,6 @@ class Minimizer():
     
     def spec_min(self, plt_history=False):
         def callback(x):
-            print(x,self.res_func_s(x))
             self.history.append([x,self.res_func_s(x)])
 
         if not self.species:
@@ -328,8 +327,12 @@ class Minimizer():
                     cutoff_plot[0].append(t)
                     cutoff_plot[1].append(self.trajs[i][1][j])
                 plt.figure(i)
-                plt.plot(np.array(cutoff_plot[0],dtype=np.float64),np.array(cutoff_plot[1],dtype=np.float64),label='M_fm - Ground Truth')
-                plt.plot(t_traj[lim[0]:lim[1]]/60/60/24, y_traj[1,lim[0]:lim[1]].T, label="M_fm - Simulation")
+                
+                if self.get_final_guess() == [4.0e-7,22.1,0.5]:
+                    plt.plot(np.array(cutoff_plot[0],dtype=np.float64),np.array(cutoff_plot[1],dtype=np.float64),label='Ground Truth', marker='o')
+                    plt.plot(t_traj[lim[0]:lim[1]]/60/60/24, y_traj[1,lim[0]:lim[1]].T, label="Baseline Simulation")
+                else:
+                    plt.plot(t_traj[lim[0]:lim[1]]/60/60/24, y_traj[1,lim[0]:lim[1]].T, label="Updated Simulation")
                 plt.title("Calibrated Simulation")
                 plt.xlabel('Time (days)')
                 plt.ylabel('Weight (kg m-2)')
@@ -342,7 +345,7 @@ class Minimizer():
         ## Violin Plot
 
         # Flatten the list of errors and create corresponding trajectory labels
-        if prepare_plot:
+        if prepare_plot and self.get_final_guess() != [4.0e-7,22.1,0.5]:
             self.err_by_day = sorted(self.err_by_day, key=lambda x: x[0])
             days = [(sublist[0],len(sublist)-1) for sublist in self.err_by_day]
             flat_errors = [sublist[1:] for sublist in self.err_by_day]
@@ -480,13 +483,14 @@ def create_train_test(seed, filter, train_pct=.9):
         return trajs
     
     def optimize_day(trajs, light_conds):
-        day_range = [-1,0,1,2,3,4,5,6,7]
+        day_range = [-1,0,1,2,3,4,5,6,7,8,9]
         print('---------------- Data Loading ----------------')
 
         for i, traj in tqdm(enumerate(trajs), total=len(trajs)):
             res_ = []
+            new_traj = [traj[0][:5],traj[1][:5]]
             for day in day_range:
-                traj_ = [[np.array([t-day for t in traj[0]]), traj[1]]]
+                traj_ = [[np.array([t-day for t in new_traj[0]]), new_traj[1]]]
                 mini = Minimizer([4e-7,22.1,0.5], [[0.3e-6, .5e-6],[v*.9, v*1.1], [0.425, 0.575]],traj_, traj_,[light_conds[i],light_conds[i]], spec='None',repress_print=True)
                 base, _ = mini.testset_eval(prepare_plot=False)
                 res_.append(base)
@@ -494,8 +498,8 @@ def create_train_test(seed, filter, train_pct=.9):
             trajs[i] = [[t-day_range[best_day_idx] for t in traj[0]], traj[1]]
         return trajs
 
-    factors = [2.0,2.5,3.0,3.5,4.0,4.5,5.0]
-    cutoffs = [2,5,8,11,16,22,26]
+    factors = [3.5,2.5,3.0,3.5,4.0,4.5,5]
+    cutoffs = [3,5,8,11,16,22,26]
     light_conds, raw_trajs = traj_analysis()
 
     ### Poor Growth Removal (duct-tape removal)
@@ -505,6 +509,10 @@ def create_train_test(seed, filter, train_pct=.9):
 
     trajs = pull_wgt_per_area(raw_trajs,factors,cutoffs)
     trajs = optimize_day(trajs, light_conds)
+
+    # mini = Minimizer([4.0e-7,22.1,0.5], bounds,[],trajs,light_conds, spec="None",repress_print=False, huber=False)
+    # _, _ = mini.testset_eval(prepare_plot=True)
+    # plt.show()
 
     random.seed(seed)
     indices = list(range(len(trajs)))
@@ -549,35 +557,123 @@ if __name__ == '__main__':
     k = 0.4e-6
     v = 22.1
     a = .5
-    bounds = [[0.325e-6, .475e-6],[v*.7, v*1.3], [0.4, 0.6]]
+    bounds = [[0.175e-6, .475e-6],[v*.5, v*1.5], [0.325, 0.675]]
     types = ['K','V','A','V_A','VA','KV','KVA','K_V','K_V_A']
 
-    res_total = []
-    for seed in range(10):
-        print('Seed',seed)
-        tr, te, light = create_train_test(seed, filter=[1,39,49])
-        trajs = K_means_split(10, tr+te, light)
-        for i,traj in enumerate(trajs):
-            print('Fold',i)
-            tr = traj[0]; te = traj[1]; light = traj[2]
-            mini = Minimizer([k,v,a], bounds,tr, te,light, spec='None',repress_print=True, huber=True)
-            base, std_base = mini.testset_eval(prepare_plot=False)
-            for t in types:
-                mini = Minimizer([k,v,a], bounds,tr, te,light, spec=t,repress_print=True, huber=True)
-                mini.optimize_loop()
-                res, std_res = mini.testset_eval(prepare_plot=False)
-                guess = mini.get_final_guess()
-                print('type:', t,base, std_base, res, std_res, guess)
-                res_total.append([guess, (res-base)/base, res, base])
+    with open("/Users/morganmayborne/Downloads/results_new.csv", mode='r') as f:
+        reader = csv.reader(f)
+        optim = [item for item in list(reader)]
+        optim = optim[8:116]+optim[122:302]
+    types = [item[0] for item in optim]
+    params = [item[-1] for item in optim]
+    print(len(types))
+    
+    new_params = []
+    for p in params:
+        param_list = []
+        cur_param = ''
+        for char in p:
+            if char != '[':
+                if char == ',' or char == ']':
+                    param_list.append(float(cur_param))
+                    cur_param = ''
+                else:
+                    cur_param += char
+        
+        new_params.append(param_list)
 
-    # [print(r) for r in sorted(res_total, key=lambda x: x[1])]
+    #### Parameter Set Averages ####
+    paramsets = np.zeros((8,27))
+    for i in range(len(new_params)):
+        paramsets[i//36, i%9] = (paramsets[i//36, i%9]*((i%36)//9)+new_params[i][0])/((i%36)//9+1)
+        paramsets[i//36, 9+i%9] = (paramsets[i//36, 9+i%9]*((i%36)//9)+new_params[i][1])/((i%36)//9+1)
+        paramsets[i//36, 18+i%9] = (paramsets[i//36, 18+i%9]*((i%36)//9)+new_params[i][2])/((i%36)//9+1)
 
-    tr, te, light = create_train_test(7, filter=[1,39,49])
-    mini = Minimizer([k,v,a], bounds,tr,te,light, spec='K',repress_print=False, huber=False)
-    base, std_base = mini.testset_eval(prepare_plot=True)
-    mini.optimize_loop()
-    res, std_res = mini.testset_eval(prepare_plot=True)
-    guess = mini.get_final_guess()
-    print(base, std_base, res, std_res, guess)
+    # Cumulative Averages
+    paramsets = np.mean(paramsets,axis=0)
+    [print(types[i], paramsets[i], paramsets[9+i], paramsets[18+i]) for i in range(9)]
+
+    # #### Evaluation ####
+    res_ = []
+    tr, te, light = create_train_test(0, filter=[1])
+    mini = Minimizer([k,v,a], bounds,[], tr+te,light, spec='None',repress_print=True, huber=False)
+    base, std_base = mini.testset_eval(prepare_plot=False)
+    for p in tqdm(new_params[:]):
+        mini = Minimizer(p, bounds,[], tr+te,light, spec='None',repress_print=True, huber=False)
+        res, std_res = mini.testset_eval(prepare_plot=False)
+        res_.append([p, (res-base)/base, res, base, std_res, std_base])
+
+    #### Averaging Results ####
+    averages = np.zeros((8,18*2))
+    for i in range(len(res_)):
+        averages[i//36,i%9] = (averages[i//36, i%9]*((i%36)//9)+res_[i][2])/((i%36)//9+1)
+        averages[i//36,9+i%9] = (averages[i//36, 9+i%9]*((i%36)//9)+res_[i][4])/((i%36)//9+1)
+        averages[i//36,18+i%9] = (averages[i//36, 18+i%9]*((i%36)//9)+res_[i][3])/((i%36)//9+1)
+        averages[i//36,27+i%9] = (averages[i//36, 27+i%9]*((i%36)//9)+res_[i][5])/((i%36)//9+1)
+
+    # Cumulative Averages
+    averages = np.mean(averages,axis=0)
+    [print(types[i], averages[i], averages[9+i],averages[i+18], averages[27+i]) for i in range(9)]
+
+    # #### Best / Median Results ####
+    res_ = sorted(res_, key=lambda x: x[2])
+    print('Best:',res_[0])
+    print('Median:',res_[len(res_)//2])
+    residuals = [r[2] for r in res_]+[base]
+    stdevs = [r[4] for r in res_]+[std_base]
+    print('Base Values', base, std_base)
+
+    plt.figure(100)
+    r_histogram = plt.hist(residuals, bins=np.arange(base-.2*base,base+.2*base,.2*base/10), color='b')
+    plt.title("Parameter Set Value - Histogram") 
+    plt.ylabel("Count")
+    plt.xlabel("Mean Residual / Measurement (kg/m2)")
+
+    plt.figure(101)
+    r_histogram = plt.hist(stdevs, bins=np.arange(std_base-.4*std_base,std_base+.4*std_base,.4*std_base/10),color='r')
+    plt.title("Parameter Set Value Std. Deviation - Histogram") 
+    plt.ylabel("Count")
+    plt.xlabel("Standard Deviation of Residual / Measurement (kg/m2)")
     plt.show()
+
+    #### Testing Certain Trajectories
+    # trajs = K_means_split(10, tr+te, light)
+    # tr = trajs[0][0]; te = trajs[0][1]; light = trajs[0][2]
+    # optimals = [[2.438e-7,22.1,0.5],[4e-7,33.15,0.517],[4e-7,22.1,0.518],[4e-7,33.15,0.518],[4e-7,11.91,0.545],[1.97e-7,26.34,0.5],[2.452e-7,23.53,0.511],[2.43e-7,33.15,0.5],[2.43e-7,33.15,0.504]]
+    # for i in range(9):
+    #     mini = Minimizer(optimals[i], bounds,[],tr+te,light, spec='None',repress_print=False, huber=False)
+    #     base, std_base = mini.testset_eval(prepare_plot=False)
+        # mini.optimize_loop()
+        # res, std_res = mini.testset_eval(prepare_plot=True)
+        # guess = mini.get_final_guess()
+        # plt.show()
+
+    # res_total = []
+    # for seed in range(10):
+    #     print('Seed',seed)
+    #     tr, te, light = create_train_test(seed, filter=[1,39,49])
+    #     trajs = K_means_split(10, tr+te, light)
+    #     for i,traj in enumerate(trajs):
+    #         print('Fold',i)
+    #         tr = traj[0]; te = traj[1]; light = traj[2]
+    #         mini = Minimizer([k,v,a], bounds,tr, te,light, spec='None',repress_print=True, huber=True)
+    #         base, std_base = mini.testset_eval(prepare_plot=False)
+    #         for t in types:
+    #             mini = Minimizer([k,v,a], bounds,tr, te,light, spec=t,repress_print=True, huber=True)
+    #             mini.optimize_loop()
+    #             res, std_res = mini.testset_eval(prepare_plot=False)
+    #             guess = mini.get_final_guess()
+    #             print('type:', t,base, std_base, res, std_res, guess)
+    #             res_total.append([guess, (res-base)/base, res, base])
+
+    # # [print(r) for r in sorted(res_total, key=lambda x: x[1])]
+
+    # tr, te, light = create_train_test(7, filter=[1,39,49])
+    # mini = Minimizer([k,v,a], bounds,tr,te,light, spec='K',repress_print=False, huber=False)
+    # base, std_base = mini.testset_eval(prepare_plot=True)
+    # mini.optimize_loop()
+    # res, std_res = mini.testset_eval(prepare_plot=True)
+    # guess = mini.get_final_guess()
+    # print(base, std_base, res, std_res, guess)
+    # plt.show()
     

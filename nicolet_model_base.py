@@ -8,12 +8,6 @@ Created on Mon Jun 17 10:34:10 2024
 
 import numpy as np
 import matplotlib.pyplot as plt
-# from tqdm import tqdm
-# from datetime import datetime
-# from scipy.signal import place_poles
-# import scipy.signal as signal
-# from scipy.ndimage import gaussian_filter1d
-# from scipy.fft import fft, fftfreq
 
 
 ####### Functions for the Nicolet Model ##########
